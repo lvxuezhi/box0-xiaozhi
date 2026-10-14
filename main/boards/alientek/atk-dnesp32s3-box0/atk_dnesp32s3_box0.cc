@@ -21,10 +21,12 @@
 
 #define TAG "atk_dnesp32s3_box0"
 
-// MQTT broker topic for PC→box0 stats
-#define PC_MONITOR_MQTT_BROKER "broker.emqxsl.com"
-#define PC_MONITOR_MQTT_PORT   1883
+// MQTT broker for PC→box0 stats (user's EMQX Cloud, TLS-only 8883)
+#define PC_MONITOR_MQTT_BROKER "rbaa6997.ala.cn-hangzhou.emqxsl.cn"
+#define PC_MONITOR_MQTT_PORT   8883
 #define PC_MONITOR_MQTT_TOPIC  "atk/box0/pc/status"
+#define PC_MONITOR_MQTT_USER   "aibox"
+#define PC_MONITOR_MQTT_PASS   "0oFnkPJGhs4htJ"
 
 class atk_dnesp32s3_box0  : public WifiBoard {
 private:
@@ -219,7 +221,8 @@ private:
             });
         });
 
-        pc_monitor_.Start(PC_MONITOR_MQTT_BROKER, PC_MONITOR_MQTT_PORT, PC_MONITOR_MQTT_TOPIC);
+        pc_monitor_.Start(PC_MONITOR_MQTT_BROKER, PC_MONITOR_MQTT_PORT, PC_MONITOR_MQTT_TOPIC,
+                          PC_MONITOR_MQTT_USER, PC_MONITOR_MQTT_PASS);
     }
 
     void InitializeButtons() {

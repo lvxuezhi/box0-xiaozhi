@@ -20,7 +20,7 @@ public:
     bool IsVisible() const { return visible_; }
 
 private:
-    static const int kRows = 4;  // CPU, MEM, GPU, DISK
+    static constexpr int kRows = 4;  // CPU, MEM, GPU, DISK
 
     bool created_ = false;
     bool visible_ = false;

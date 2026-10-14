@@ -1,6 +1,7 @@
 #include "pc_monitor_page.h"
 #include <esp_log.h>
 #include <lvgl.h>
+#include <esp_lvgl_port.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -18,7 +19,7 @@ struct RowDef {
     float danger_pct;
 };
 
-static constexpr RowDef kRows[] = {
+static constexpr RowDef kRowDefs[] = {
     {"cpu",  75.0f, 95.0f},
     {"mem",  80.0f, 95.0f},
     {"gpu",  70.0f, 90.0f},
@@ -48,7 +49,7 @@ void PcMonitorPage::Create(lv_obj_t* screen, int width, int height) {
     lv_obj_set_flex_flow(page_, LV_FLEX_FLOW_COLUMN);
     lv_obj_align(page_, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    auto* text_font = lv_obj_get_style_text_font(screen, 0);
+    auto* text_font = lv_obj_get_style_text_font(screen, LV_PART_MAIN);
     auto text_h = text_font ? text_font->line_height : 24;
 
     // Header
@@ -68,7 +69,7 @@ void PcMonitorPage::Create(lv_obj_t* screen, int width, int height) {
     float row_h = text_h * 1.8f + 12;
     lv_coord_t bar_max_w = width - 24;  // minus pad
 
-    for (int i = 0; i < kRows && i < kRows; i++) {
+    for (int i = 0; i < kRows; i++) {
         // Row container: label | bar | value
         lv_obj_t* row = lv_obj_create(page_);
         lv_obj_set_size(row, LV_PCT(100), (lv_coord_t)row_h);
@@ -133,7 +134,7 @@ void PcMonitorPage::Create(lv_obj_t* screen, int width, int height) {
         if (self && self->visible_) {
             self->Hide();
         }
-    }, LV_EVENT_PRESS_END, this);
+    }, LV_EVENT_CLICKED, this);
 
     created_ = true;
     visible_ = false;
@@ -142,13 +143,12 @@ void PcMonitorPage::Create(lv_obj_t* screen, int width, int height) {
 void PcMonitorPage::UpdateStats(const cJSON* root) {
     if (!created_ || !root) return;
     // Called from Application::Schedule (main task), use LVGL lock directly.
-    extern "C" bool lvgl_port_lock(int timeout_ms);
-    extern "C" void lvgl_port_unlock(void);
     lvgl_port_lock(0);
 
+    char buf[128];
     for (int i = 0; i < kRows; i++) {
         float pct = 0.0f;
-        cJSON* v = cJSON_GetObjectItemCaseSensitive(root, kRows[i].key);
+        cJSON* v = cJSON_GetObjectItemCaseSensitive(root, kRowDefs[i].key);
         if (cJSON_IsNumber(v)) pct = (float)v->valuedouble;
 
         int bar_val = (int)(pct + 0.5f);
@@ -159,56 +159,42 @@ void PcMonitorPage::UpdateStats(const cJSON* root) {
         // Colour by severity
         lv_obj_t* indic = lv_obj_get_child(bar_[i], 0);
         lv_color_t col = kBarColor;
-        if (pct >= kRows[i].danger_pct) col = kBarDanger;
-        else if (pct >= kRows[i].warn_pct) col = kBarWarn;
+        if (pct >= kRowDefs[i].danger_pct) col = kBarDanger;
+        else if (pct >= kRowDefs[i].warn_pct) col = kBarWarn;
         if (indic) lv_obj_set_style_bg_color(indic, col, 0);
 
-        char buf[16];
         snprintf(buf, sizeof(buf), "%d%%", bar_val);
         lv_label_set_text(value_label_[i], buf);
 
-        // Extra row-specific info
+        // Extra row-specific info — keep in a separate buffer to avoid
+        // aliasing the main `buf` which confuses the compiler's truncation check
+        char extra_buf[64];
         const char* extra = "";
-        if (strcmp(kRows[i].key, "cpu") == 0) {
+        if (strcmp(kRowDefs[i].key, "cpu") == 0) {
             cJSON* t = cJSON_GetObjectItemCaseSensitive(root, "cpu_temp");
-            if (cJSON_IsNumber(t)) {
-                snprintf(buf, sizeof(buf), "%g°C", t->valuedouble);
-                extra = buf;
-            }
-        } else if (strcmp(kRows[i].key, "gpu") == 0) {
+            if (cJSON_IsNumber(t)) { snprintf(extra_buf, sizeof(extra_buf), "%g°C", t->valuedouble); extra = extra_buf; }
+        } else if (strcmp(kRowDefs[i].key, "gpu") == 0) {
             cJSON* t = cJSON_GetObjectItemCaseSensitive(root, "gpu_temp");
-            if (cJSON_IsNumber(t)) {
-                snprintf(buf, sizeof(buf), "%g°C", t->valuedouble);
-                extra = buf;
-            }
+            if (cJSON_IsNumber(t)) { snprintf(extra_buf, sizeof(extra_buf), "%g°C", t->valuedouble); extra = extra_buf; }
             cJSON* vr = cJSON_GetObjectItemCaseSensitive(root, "vram");
-            if (cJSON_IsNumber(vr)) {
-                snprintf(buf, sizeof(buf), "%s/%d MB",
-                         extra, (int)vr->valuedouble);
-                extra = buf;
-            }
-        } else if (strcmp(kRows[i].key, "mem") == 0) {
+            if (cJSON_IsNumber(vr)) { snprintf(extra_buf, sizeof(extra_buf), "%d MB", (int)vr->valuedouble); extra = extra_buf; }
+        } else if (strcmp(kRowDefs[i].key, "mem") == 0) {
             cJSON* u = cJSON_GetObjectItemCaseSensitive(root, "mem_used_mb");
-            if (cJSON_IsNumber(u)) {
-                snprintf(buf, sizeof(buf), "%lld MB", (long long)u->valuedouble);
-                extra = buf;
-            }
-        } else if (strcmp(kRows[i].key, "disk") == 0) {
-            snprintf(buf, sizeof(buf), "%d%% full", bar_val);
-            extra = buf;
+            if (cJSON_IsNumber(u)) { snprintf(extra_buf, sizeof(extra_buf), "%lld MB", (long long)u->valuedouble); extra = extra_buf; }
+        } else if (strcmp(kRowDefs[i].key, "disk") == 0) {
+            snprintf(extra_buf, sizeof(extra_buf), "%d%% full", bar_val);
+            extra = extra_buf;
         }
         if (extra_label_[i]) lv_label_set_text(extra_label_[i], extra);
     }
 
     // Bottom label: show network speeds
-    const char* net_extra = "";
     cJSON* up = cJSON_GetObjectItemCaseSensitive(root, "net_up");
     cJSON* dn = cJSON_GetObjectItemCaseSensitive(root, "net_down");
     if (cJSON_IsNumber(up) && cJSON_IsNumber(dn)) {
         snprintf(buf, sizeof(buf), "↑ %.0f KB/s  ↓ %.0f KB/s",
                  up->valuedouble, dn->valuedouble);
         lv_label_set_text(bottom_label_, buf);
-        net_extra = buf;
     }
 
     lvgl_port_unlock();

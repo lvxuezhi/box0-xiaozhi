@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_timer.h>
+#include <memory>
 #include "board.h"
 
 #define TAG "PcMonitor"
@@ -83,10 +84,9 @@ bool PcMonitor::Connect() {
         }
     });
 
-    bool ok = mqtt_->Connect(broker_host_.c_str(), broker_port_, client_id.c_str(),
-                             username_.empty() ? nullptr : username_.c_str(),
-                             password_.empty() ? nullptr : password_.c_str());
-    if (!ok) {
+    if (auto connected = mqtt_->Connect(broker_host_, broker_port_, client_id,
+                             username_.empty() ? "" : username_,
+                             password_.empty() ? "" : password_); !connected) {
         ESP_LOGE(TAG, "Failed to connect to MQTT broker %s:%d", broker_host_.c_str(), broker_port_);
         ScheduleReconnect();
         return false;

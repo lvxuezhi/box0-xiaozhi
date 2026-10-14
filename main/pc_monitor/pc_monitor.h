@@ -3,6 +3,9 @@
 
 #include <string>
 #include <functional>
+#include <memory>
+#include <atomic>
+#include <esp_timer.h>
 #include <cJSON.h>
 #include <mqtt.h>
 
